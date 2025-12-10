@@ -100,3 +100,20 @@ ppu_clip/
 이 프로젝트는
 *은뿌 다시보기에서 특정 구간만 저장하고 싶었던 니즈*에서 출발했습니다.
 편하게 사용할 수 있도록 계속 다듬어 나갈 예정입니다.
+
+
+## 배포
+```bash
+uv run pyinstaller `
+  --name ppu-clip `
+  --noconfirm `
+  --noconsole `
+  --onedir `
+  --collect-all PySide6 `
+  --add-data "docs\figure.png;docs" `
+  --add-binary ".\ffmpeg\ffmpeg.exe;ffmpeg" `
+  gui.py
+```
+
+## ffmpeg
+https://www.gyan.dev/ffmpeg/builds/

@@ -12,3 +12,8 @@ wheels/
 *.mp4
 
 *.log
+
+*.exe
+
+release
+backup

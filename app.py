@@ -160,27 +160,37 @@ if st.button("📥 다운로드", type="primary", use_container_width=True):
                 
                 show_duplicate_dialog(filepath)
             else:
-                # 다운로드 실행
-                with st.spinner("⏳ 다운로드 중..."):
-                    # Console 출력 캡처
-                    import io
-                    import sys
-                    
-                    old_stdout = sys.stdout
-                    old_stderr = sys.stderr
-                    sys.stdout = io.StringIO()
-                    sys.stderr = io.StringIO()
-                    
-                    try:
-                        downloader = PpuClipDownloader(
-                            url=clean_url,
-                            start=start_seconds,
-                            duration=duration,
-                        )
-                        downloader.run()
-                    finally:
-                        sys.stdout = old_stdout
-                        sys.stderr = old_stderr
+                # 진행률 바 생성
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+                
+                def update_progress(percent):
+                    """진행률 업데이트 콜백"""
+                    progress_bar.progress(percent / 100)
+                    progress_text.text(f"⏳ 다운로드 중... {percent}%")
+                
+                # Console 출력 캡처
+                import io
+                import sys
+                
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                sys.stdout = io.StringIO()
+                sys.stderr = io.StringIO()
+                
+                try:
+                    downloader = PpuClipDownloader(
+                        url=clean_url,
+                        start=start_seconds,
+                        duration=duration,
+                        progress_callback=update_progress,
+                    )
+                    downloader.run()
+                finally:
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    progress_bar.empty()
+                    progress_text.empty()
                 
                 st.success("✅ 다운로드 완료!")
                 

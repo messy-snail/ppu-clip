@@ -31,41 +31,68 @@ from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 # 설정 클래스
 # =============================================================================
 
+from pathlib import Path  # ← 없으면 추가
+
 class LoggerConfig:
     """로거 설정 관리"""
-    
+
     def __init__(self, log_dir: str = "logs", log_filename: str = "ppu_clip.log"):
         self.log_dir = log_dir
         self.log_filename = log_filename
-        
+
+    def _get_log_file(self) -> Path | None:
+        """실행 환경에 맞는 로그 파일 경로 계산"""
+
+        # 파일 로그를 아예 끄고 싶으면 log_filename을 None으로 둘 수도 있으니까 방어
+        if not self.log_filename:
+            return None
+
+        # PyInstaller로 빌드된 exe 인지 여부
+        if getattr(sys, "frozen", False):
+            base_dir = Path(sys.executable).resolve().parent
+        else:
+            base_dir = Path(__file__).resolve().parent
+
+        log_dir = base_dir / self.log_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        return log_dir / self.log_filename
+
     def setup(self) -> None:
         """로거 초기화 및 설정"""
-        # 로그 디렉터리 생성
-        log_path = os.path.join(os.getcwd(), self.log_dir)
-        os.makedirs(log_path, exist_ok=True)
-        
+
         logger.remove()
-        
-        # 콘솔 출력: ERROR 이상만
-        logger.add(
-            sys.stderr,
-            level="ERROR",
-            format="<red>{time:YYYY-MM-DD HH:mm:ss}</red> | "
-                   "<level>{level: <8}</level> | "
-                   "<level>{message}</level>",
-        )
-        
+
+        # 콘솔 출력: ERROR 이상만 (콘솔이 있을 때만)
+        if sys.stderr is not None:
+            logger.add(
+                sys.stderr,
+                level="ERROR",
+                format="<red>{time:YYYY-MM-DD HH:mm:ss}</red> | "
+                    "<level>{level: <8}</level> | "
+                    "<level>{message}</level>",
+            )
+
         # 파일 출력: DEBUG 전부
-        logger.add(
-            os.path.join(log_path, self.log_filename),
-            rotation="00:00",
-            retention="7 days",
-            encoding="utf-8",
-            enqueue=True,
-            level="DEBUG",
-            backtrace=True,
-            diagnose=False,
-        )
+        log_file = self._get_log_file()
+        if log_file is None:
+            # 파일 로그를 안 쓰는 모드면 여기서 끝
+            return
+
+        try:
+            logger.add(
+                log_file,
+                rotation="00:00",
+                retention="7 days",
+                encoding="utf-8",
+                enqueue=True,
+                level="DEBUG",
+                backtrace=True,
+                diagnose=False,
+            )
+        except TypeError:
+            # sink 타입 문제 생기면 파일 로그는 포기하고 콘솔만 사용
+            return
 
 
 @dataclass
@@ -308,7 +335,8 @@ class FilePathManager:
 # =============================================================================
 # FFmpeg 다운로더
 # =============================================================================
-
+import subprocess
+import platform
 class FFmpegDownloader:
     """ffmpeg를 이용한 클립 다운로드"""
     
@@ -329,6 +357,7 @@ class FFmpegDownloader:
         output_path: str,
         start_sec: int,
         duration: int,
+        progress_callback=None,
     ) -> None:
         """
         m3u8 URL에서 특정 구간 다운로드
@@ -355,7 +384,7 @@ class FFmpegDownloader:
         )
         
         # 진행률 표시하며 다운로드
-        self._download_with_progress(process, duration)
+        self._download_with_progress(process, duration, progress_callback)
         
         logger.success(f"저장 완료: {output_path}")
         self.console.print(f"[bold green]다운로드 완료![/] → {output_path}\n")
@@ -369,7 +398,11 @@ class FFmpegDownloader:
         headers: str,
     ):
         """ffmpeg 프로세스 생성"""
-        return (
+        import subprocess
+        import platform
+        
+        # ffmpeg 명령어 빌드
+        cmd = (
             ffmpeg
             .input(
                 m3u8_url,
@@ -391,13 +424,22 @@ class FFmpegDownloader:
                 "-nostats",
             )
             .overwrite_output()
-            .run_async(
-                pipe_stdout=True,
-                pipe_stderr=True,
-            )
+            .compile()  # 명령어 리스트로 변환
         )
+        
+        # subprocess.Popen 옵션
+        kwargs = {
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+        }
+        
+        # Windows에서 콘솔 창 숨김
+        if platform.system() == 'Windows':
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+        
+        return subprocess.Popen(cmd, **kwargs)
     
-    def _download_with_progress(self, process, duration: int) -> None:
+    def _download_with_progress(self, process, duration: int, progress_callback=None) -> None:
         """진행률 표시하며 다운로드"""
         total_us = duration * 1_000_000  # 마이크로초 변환
         current_percent = -1
@@ -438,6 +480,9 @@ class FFmpegDownloader:
                         if percent != current_percent:
                             current_percent = percent
                             progress.update(task, completed=percent)
+                            # 콜백 호출
+                            if progress_callback:
+                                progress_callback(percent)
                 
                 # 프로세스 종료 확인
                 return_code = process.wait()
@@ -481,11 +526,13 @@ class PpuClipDownloader:
         start: Optional[int],
         duration: int = 60,
         output: Optional[str] = None,
+        progress_callback=None,
     ):
         self.url = url
         self.user_start = start
         self.duration = duration
         self.output = output
+        self.progress_callback = progress_callback
         
         self.console = Console()
         self.url_parser = ChzzkURLParser()
@@ -529,7 +576,9 @@ class PpuClipDownloader:
         self._print_download_info(video_info, start_sec, output_path)
         
         # 7. 다운로드 실행
-        self.downloader.download(m3u8_url, output_path, start_sec, self.duration)
+        self.downloader.download(
+            m3u8_url, output_path, start_sec, self.duration, self.progress_callback
+        )
     
     def _parse_url(self) -> VideoInfo:
         """URL 파싱"""
