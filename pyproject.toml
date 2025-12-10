@@ -1,0 +1,30 @@
+[project]
+name = "ppu-clip"
+version = "0.1.0"
+description = "은뿌를 위한 치지직 다시보기 일부 구간 고화질 다운로더"
+readme = "README.md"
+requires-python = ">=3.10"
+
+
+authors = [
+    { name = "messy-snail" }
+]
+
+license = { text = "MIT License" }
+
+dependencies = [
+    "ffmpeg-python>=0.2.0",
+    "loguru>=0.7.3",
+    "requests>=2.32.5",
+    "rich>=14.2.0",
+    "streamlit>=1.52.1",
+]
+
+[tool.commitizen] 
+name = "cz_conventional_commits" 
+tag_format = "v$major.$minor.$patch$prerelease" 
+version_scheme = "pep440" 
+version_provider = "poetry" 
+update_changelog_on_bump = true 
+major_version_zero = true 
+change_type_map = { "BREAKING CHANGE" = "❗ BREAKING CHANGE", "fix" = "🐛 Fixes", "feat" = "✨ Features", "docs" = "📖 Document", "style" = "👓 Style", "refactor" = "♻️ Refactor", "perf" = "⚡ Performance", "test" = "💯 Test", "build" = "🏗️ Build", "ci" = "🤖 CI" }
