@@ -374,6 +374,8 @@ class FFmpegDownloader:
             .input(
                 m3u8_url,
                 ss=start_sec,
+                allowed_extensions="ALL",
+                extension_picky=0,
                 protocol_whitelist="file,http,https,tcp,tls",
                 headers=headers,
             )
